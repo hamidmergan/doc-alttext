@@ -280,6 +280,7 @@ def test_same_image_on_two_slides_gets_its_own_context(server, tmp_path):
     prs.save(tmp_path / "a.pptx")
     run(server, tmp_path / "a.pptx", lang="English", dry_run=True)
     texts = [r["body"]["messages"][1]["content"][0]["text"] for r in server.image_requests]
-    assert len(texts) == 2
-    assert "Slide title: Goals" in texts[0] and "Slide title: Scope" in texts[1]
+    assert len(texts) == 2  # requests run in parallel, so their order is not fixed
+    assert sum("Slide title: Goals" in t for t in texts) == 1
+    assert sum("Slide title: Scope" in t for t in texts) == 1
     assert all("appears 2 times" in t for t in texts)
