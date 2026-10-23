@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doc-alttext"
+version = "0.1.0"
+description = "Add missing alt text to images in DOCX and PPTX files with any OpenAI-compatible vision model"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hamid Mergan" }]
+keywords = ["accessibility", "alt-text", "a11y", "docx", "pptx", "vision", "llm", "ollama", "openai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Office Suites",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Typing :: Typed",
+]
+dependencies = [
+    "openai>=1.30",
+    "lxml>=4.9",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+ui = ["fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6"]
+test = ["pytest>=7", "python-docx>=1.0", "python-pptx>=0.6.23", "httpx>=0.24", "fastapi>=0.100", "uvicorn>=0.23", "python-multipart>=0.0.6"]
+dev = ["doc-alttext[test]", "build"]
+
+[project.urls]
+Homepage = "https://github.com/hamidmergan/doc-alttext"
+Source = "https://github.com/hamidmergan/doc-alttext"
+Issues = "https://github.com/hamidmergan/doc-alttext/issues"
+Changelog = "https://github.com/hamidmergan/doc-alttext/blob/main/CHANGELOG.md"
+
+[project.scripts]
+doc-alttext = "doc_alttext.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+doc_alttext = ["py.typed", "web/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

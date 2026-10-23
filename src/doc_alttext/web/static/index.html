@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doc-alttext</title>
+<style>
+:root{--bg:#f4f4f2;--card:#fff;--text:#222;--muted:#666;--line:#ddd;--bad:#c0392b;--accent:#2457a6}
+*{box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px 16px 96px}
+main{max-width:980px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px}
+.intro{color:var(--muted);margin:0 0 18px}
+form{display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:var(--card);padding:14px;border-radius:8px}
+button{font:inherit;border:0;border-radius:6px;padding:8px 16px;background:var(--accent);color:#fff;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+#status{margin:14px 0;color:var(--muted);min-height:1.4em}
+#status.error{color:var(--bad)}
+.card{display:flex;gap:18px;background:var(--card);border-radius:8px;padding:14px;margin-bottom:12px}
+.pic{width:220px;flex:none;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:6px;min-height:80px}
+.pic img{max-width:100%;max-height:160px}
+.none{color:#888;font-size:13px}
+.body{flex:1;min-width:0}
+.meta{font-size:13px;color:var(--muted);margin-bottom:8px}
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:2px 8px;border-radius:10px;background:#eee;margin-right:6px}
+.added .badge{background:#dff0e5;color:#1e5c38} .error .badge{background:#f8dcd8;color:#8e2a1f} .unsupported .badge{background:#f8ecd0;color:#7a5400}
+textarea{width:100%;font:inherit;font-size:16px;line-height:1.4;padding:8px;border:1px solid var(--line);border-radius:6px;resize:vertical;min-height:64px}
+textarea:disabled{background:#f2f2f2;color:#999}
+.row{display:flex;justify-content:space-between;gap:12px;font-size:13px;color:var(--muted);margin-top:6px}
+.long{color:var(--bad)}
+.note{font-size:14px;margin-top:6px;color:#8e2a1f}
+.before{font-size:13px;color:var(--muted);margin-top:6px}
+#bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px;display:none}
+#bar .inner{max-width:980px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px}
+@media (max-width:600px){.card{flex-direction:column}.pic{width:auto}}
+</style>
+</head>
+<body>
+<main>
+  <h1>doc-alttext</h1>
+  <p class="intro">Add alt text to the images in a Word or PowerPoint file. Check and edit the texts, then download the file.</p>
+  <form id="form">
+    <input type="file" id="file" accept=".docx,.docm,.dotx,.dotm,.pptx,.pptm,.potx,.potm" required>
+    <button type="submit" id="start">Start</button>
+  </form>
+  <div id="status" role="status"></div>
+  <div id="items"></div>
+</main>
+<div id="bar"><div class="inner"><span id="summary"></span><button id="download">Download</button></div></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const LABELS = {added: "Added", decorative: "Decorative", kept: "Kept", unsupported: "Not supported", error: "Error"};
+let job = null;
+let timer = null;
+
+function status(text, error) {
+  $("status").textContent = text;
+  $("status").className = error ? "error" : "";
+}
+
+async function errorText(res) {
+  try { const data = await res.json(); return data.detail || res.statusText; } catch (e) { return res.statusText; }
+}
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = $("file").files[0];
+  if (!file) return;
+  $("items").textContent = "";
+  $("bar").style.display = "none";
+  $("start").disabled = true;
+  status("Uploading " + file.name + " ...");
+  const data = new FormData();
+  data.append("file", file);
+  const res = await fetch("/api/upload", {method: "POST", body: data});
+  if (!res.ok) { status("Error: " + await errorText(res), true); $("start").disabled = false; return; }
+  job = await res.json();
+  poll();
+});
+
+async function poll() {
+  clearTimeout(timer);
+  const res = await fetch("/api/job");
+  job = await res.json();
+  if (job.state === "running") {
+    status(job.name + ": " + job.progress + " ...");
+    timer = setTimeout(poll, 1000);
+    return;
+  }
+  $("start").disabled = false;
+  if (job.state === "failed") { status("Error: " + job.error, true); return; }
+  if (job.state === "done") show();
+}
+
+function show() {
+  const items = job.items;
+  if (!items.length) { status(job.name + ": no images found."); return; }
+  const counts = {};
+  items.forEach((i) => { counts[i.status] = (counts[i.status] || 0) + 1; });
+  const parts = Object.keys(LABELS).filter((k) => counts[k]).map((k) => counts[k] + " " + LABELS[k].toLowerCase());
+  status(job.name + ": " + items.length + (items.length === 1 ? " image" : " images") + " (" + parts.join(", ") + ")"
+         + (job.language ? ". Language: " + job.language : ""));
+  const list = $("items");
+  list.textContent = "";
+  items.forEach((item) => list.appendChild(card(item)));
+  $("summary").textContent = "Check the texts, then download " + job.name.replace(/(\.[^.]+)$/, ".alt$1");
+  $("bar").style.display = "block";
+}
+
+function card(item) {
+  const el = document.createElement("div");
+  el.className = "card " + item.status;
+  const pic = document.createElement("div");
+  pic.className = "pic";
+  if (item.has_image) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = "/api/job/" + job.id + "/images/" + item.index + ".png";
+    img.onerror = () => { pic.innerHTML = '<span class="none">No preview</span>'; };
+    pic.appendChild(img);
+  } else {
+    pic.innerHTML = '<span class="none">No preview</span>';
+  }
+  const body = document.createElement("div");
+  body.className = "body";
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  const badge = document.createElement("span");
+  badge.className = "badge";
+  badge.textContent = LABELS[item.status] || item.status;
+  meta.appendChild(badge);
+  meta.appendChild(document.createTextNode(item.location + (item.shape ? " · " + item.shape : "")));
+  body.appendChild(meta);
+
+  if (item.editable) {
+    const text = document.createElement("textarea");
+    text.value = item.alt;
+    text.setAttribute("aria-label", "Alt text for " + item.location);
+    const row = document.createElement("div");
+    row.className = "row";
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = item.decorative;
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(" Decorative (screen readers skip it)"));
+    const count = document.createElement("span");
+    const update = () => {
+      text.disabled = box.checked;
+      count.textContent = box.checked ? "" : text.value.trim().length + " / " + job.max_chars + " characters";
+      count.className = text.value.trim().length > job.max_chars ? "long" : "";
+      item.alt = text.value;
+      item.decorative = box.checked;
+      item.touched = true;
+    };
+    text.addEventListener("input", update);
+    box.addEventListener("change", update);
+    update();
+    item.touched = false;
+    row.appendChild(label);
+    row.appendChild(count);
+    body.appendChild(text);
+    body.appendChild(row);
+  }
+  if (item.old_alt && item.status !== "kept") {
+    const before = document.createElement("div");
+    before.className = "before";
+    before.textContent = "Before: " + item.old_alt;
+    body.appendChild(before);
+  }
+  if ((item.status === "error" || item.status === "unsupported") && item.note) {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent = item.note + (item.status === "error" ? " Write the text yourself or leave it empty." : "");
+    body.appendChild(note);
+  }
+  el.appendChild(pic);
+  el.appendChild(body);
+  return el;
+}
+
+function decision(item) {
+  if (!item.editable) return null;
+  const changedByModel = item.status === "added" || item.status === "decorative";
+  if (!changedByModel && !item.touched) return null;
+  if (!item.decorative && !item.alt.trim() && item.status !== "kept") return null;
+  return {alt: item.alt, decorative: item.decorative};
+}
+
+$("download").addEventListener("click", async () => {
+  $("download").disabled = true;
+  const res = await fetch("/api/job/" + job.id + "/download", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({decisions: job.items.map(decision)}),
+  });
+  $("download").disabled = false;
+  if (!res.ok) { status("Error: " + await errorText(res), true); return; }
+  const blob = await res.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = job.name.replace(/(\.[^.]+)$/, ".alt$1");
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+});
+
+poll();
+</script>
+</body>
+</html>
